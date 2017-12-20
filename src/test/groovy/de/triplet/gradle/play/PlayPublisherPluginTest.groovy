@@ -1,26 +1,27 @@
 package de.triplet.gradle.play
 
-import org.gradle.api.Project
 import org.gradle.api.internal.plugins.PluginApplicationException
 import org.gradle.testfixtures.ProjectBuilder
 import org.junit.Test
 
+import static de.triplet.gradle.play.DependsOn.dependsOn
 import static org.junit.Assert.assertEquals
 import static org.junit.Assert.assertNotNull
+import static org.junit.Assert.assertThat
 import static org.junit.Assert.fail
 
 class PlayPublisherPluginTest {
 
     @Test(expected = PluginApplicationException.class)
-    public void testThrowsOnLibraryProjects() {
-        Project project = ProjectBuilder.builder().build()
+    void testThrowsOnLibraryProjects() {
+        def project = ProjectBuilder.builder().build()
         project.apply plugin: 'com.android.library'
         project.apply plugin: 'com.github.triplet.play'
     }
 
     @Test
-    public void testCreatesDefaultTask() {
-        Project project = TestHelper.evaluatableProject()
+    void testCreatesDefaultTask() {
+        def project = TestHelper.evaluatableProject()
         project.evaluate()
 
         assertNotNull(project.tasks.publishRelease)
@@ -28,8 +29,8 @@ class PlayPublisherPluginTest {
     }
 
     @Test
-    public void testCreatesFlavorTasks() {
-        Project project = TestHelper.evaluatableProject()
+    void testCreatesFlavorTasks() {
+        def project = TestHelper.evaluatableProject()
 
         project.android.productFlavors {
             free
@@ -46,16 +47,16 @@ class PlayPublisherPluginTest {
     }
 
     @Test
-    public void testDefaultTrack() {
-        Project project = TestHelper.evaluatableProject()
+    void testDefaultTrack() {
+        def project = TestHelper.evaluatableProject()
         project.evaluate()
 
-        assertEquals('alpha', project.extensions.findByName("play").track)
+        assertEquals('alpha', project.extensions.findByName('play').track)
     }
 
     @Test
-    public void testTrack() {
-        Project project = TestHelper.evaluatableProject()
+    void testTrack() {
+        def project = TestHelper.evaluatableProject()
 
         project.play {
             track 'production'
@@ -63,12 +64,12 @@ class PlayPublisherPluginTest {
 
         project.evaluate()
 
-        assertEquals('production', project.extensions.findByName("play").track)
+        assertEquals('production', project.extensions.findByName('play').track)
     }
 
     @Test(expected = IllegalArgumentException.class)
-    public void testThrowsOnInvalidTrack() {
-        Project project = TestHelper.evaluatableProject()
+    void testThrowsOnInvalidTrack() {
+        def project = TestHelper.evaluatableProject()
 
         project.play {
             track 'gamma'
@@ -76,8 +77,8 @@ class PlayPublisherPluginTest {
     }
 
     @Test
-    public void testUserFraction() {
-        Project project = TestHelper.evaluatableProject()
+    void testUserFraction() {
+        def project = TestHelper.evaluatableProject()
 
         project.play {
             userFraction 0.1
@@ -85,26 +86,12 @@ class PlayPublisherPluginTest {
 
         project.evaluate()
 
-        assertEquals(0.1, project.extensions.findByName("play").userFraction, 0)
+        assertEquals(0.1, project.extensions.findByName('play').userFraction, 0)
     }
 
     @Test
-    public void testJsonFile() {
-        Project project = TestHelper.evaluatableProject()
-
-        project.play {
-            jsonFile new File("key.json");
-        }
-
-        project.evaluate()
-
-        assertEquals("key.json", project.extensions.findByName("play").jsonFile.name)
-    }
-
-
-    @Test
-    public void testPublishListingTask() {
-        Project project = TestHelper.evaluatableProject()
+    void testPublishListingTask() {
+        def project = TestHelper.evaluatableProject()
 
         project.android.productFlavors {
             free
@@ -118,8 +105,8 @@ class PlayPublisherPluginTest {
     }
 
     @Test
-    public void testNoSigningConfigGenerateTasks() {
-        Project project = TestHelper.noSigningConfigProject()
+    void testNoSigningConfigGenerateTasks() {
+        def project = TestHelper.noSigningConfigProject()
 
         project.evaluate()
 
@@ -131,4 +118,172 @@ class PlayPublisherPluginTest {
         }
     }
 
+    @Test
+    void testJsonFileBackwardsCompatibility() {
+        def project = TestHelper.evaluatableProject()
+
+        project.play {
+            jsonFile new File('key.json')
+        }
+
+        project.evaluate()
+
+        assertEquals('key.json', project.extensions.play.jsonFile.name)
+    }
+
+    @Test
+    void testPlayAccountBackwardsCompatibility() {
+        def project = TestHelper.evaluatableProject()
+
+        project.play {
+            serviceAccountEmail = 'service-account@test.com'
+            pk12File = new File('key.p12')
+        }
+
+        project.evaluate()
+
+        project.extensions.play.serviceAccountEmail == 'service-account@test.com'
+        project.extensions.play.pk12File = new File('key.p12')
+    }
+
+    @Test
+    void testPlaySigningConfigs() {
+        def project = TestHelper.evaluatableProject()
+
+        project.android {
+            playAccountConfigs {
+                defaultAccountConfig {
+                    serviceAccountEmail = 'default@exmaple.com'
+                    pk12File = project.file('first-secret.pk12')
+                }
+                free {
+                    serviceAccountEmail = 'first-mail@exmaple.com'
+                    pk12File = project.file('secret.pk12')
+                }
+                paid {
+                    serviceAccountEmail = 'another-mail@exmaple.com'
+                    pk12File = project.file('another-secret.pk12')
+                }
+            }
+
+            defaultConfig {
+                playAccountConfig = playAccountConfigs.defaultAccountConfig
+            }
+
+            productFlavors {
+                defaultFlavor {
+
+                }
+                free {
+                    playAccountConfig = playAccountConfigs.free
+                }
+                paid {
+                    playAccountConfig = playAccountConfigs.paid
+                }
+            }
+        }
+        project.evaluate()
+
+        assertEquals('default@exmaple.com', project.tasks.bootstrapDefaultFlavorReleasePlayResources.playAccountConfig.serviceAccountEmail)
+        assertEquals('first-mail@exmaple.com', project.tasks.bootstrapFreeReleasePlayResources.playAccountConfig.serviceAccountEmail)
+        assertEquals('another-mail@exmaple.com', project.tasks.bootstrapPaidReleasePlayResources.playAccountConfig.serviceAccountEmail)
+
+        assertEquals('default@exmaple.com', project.tasks.publishApkDefaultFlavorRelease.playAccountConfig.serviceAccountEmail)
+        assertEquals('first-mail@exmaple.com', project.tasks.publishApkFreeRelease.playAccountConfig.serviceAccountEmail)
+        assertEquals('another-mail@exmaple.com', project.tasks.publishApkPaidRelease.playAccountConfig.serviceAccountEmail)
+
+        assertEquals('default@exmaple.com', project.tasks.publishListingDefaultFlavorRelease.playAccountConfig.serviceAccountEmail)
+        assertEquals('first-mail@exmaple.com', project.tasks.publishListingFreeRelease.playAccountConfig.serviceAccountEmail)
+        assertEquals('another-mail@exmaple.com', project.tasks.publishListingPaidRelease.playAccountConfig.serviceAccountEmail)
+    }
+
+    @Test
+    void testPlaySigningConfigsDimensions() {
+        def project = TestHelper.evaluatableProject()
+
+        project.android {
+
+            flavorDimensions "mode", "variant"
+
+            playAccountConfigs {
+                free {
+                    serviceAccountEmail = 'free@exmaple.com'
+                    pk12File = project.file('secret.pk12')
+                }
+                paid {
+                    serviceAccountEmail = 'paid@exmaple.com'
+                    pk12File = project.file('another-secret.pk12')
+                }
+            }
+
+            productFlavors {
+                demo {
+                    dimension = "mode"
+                }
+                production {
+                    dimension = "mode"
+                }
+                free {
+                    dimension = "variant"
+                    playAccountConfig = playAccountConfigs.free
+                }
+                paid {
+                    dimension = "variant"
+                    playAccountConfig = playAccountConfigs.paid
+                }
+            }
+        }
+        project.evaluate()
+
+        assertEquals('free@exmaple.com', project.tasks.bootstrapDemoFreeReleasePlayResources.playAccountConfig.serviceAccountEmail)
+        assertEquals('paid@exmaple.com', project.tasks.bootstrapDemoPaidReleasePlayResources.playAccountConfig.serviceAccountEmail)
+        assertEquals('free@exmaple.com', project.tasks.bootstrapProductionFreeReleasePlayResources.playAccountConfig.serviceAccountEmail)
+        assertEquals('paid@exmaple.com', project.tasks.bootstrapProductionPaidReleasePlayResources.playAccountConfig.serviceAccountEmail)
+    }
+
+    @Test
+    void testNoProductFlavors() {
+        def project = TestHelper.evaluatableProject()
+
+        project.android {
+            playAccountConfigs {
+                defaultAccountConfig {
+                    serviceAccountEmail = 'default@exmaple.com'
+                    pk12File = project.file('first-secret.pk12')
+                }
+            }
+
+            defaultConfig {
+                playAccountConfig = playAccountConfigs.defaultAccountConfig
+            }
+        }
+        project.evaluate()
+
+        assertEquals('default@exmaple.com', project.tasks.bootstrapReleasePlayResources.playAccountConfig.serviceAccountEmail)
+        assertEquals('default@exmaple.com', project.tasks.publishApkRelease.playAccountConfig.serviceAccountEmail)
+        assertEquals('default@exmaple.com', project.tasks.publishListingRelease.playAccountConfig.serviceAccountEmail)
+    }
+
+    @Test
+    void testSplits() {
+        def project = TestHelper.evaluatableProject()
+
+        project.android {
+            splits {
+                abi {
+                    enable true
+                    reset()
+                    include 'x86', 'armeabi-v7a', 'mips'
+                }
+            }
+        }
+
+        project.evaluate()
+
+        assertThat(project.tasks.assembleRelease, dependsOn('assembleX86Release'))
+        assertThat(project.tasks.assembleRelease, dependsOn('assembleArmeabi-v7aRelease'))
+        assertThat(project.tasks.assembleRelease, dependsOn('assembleMipsRelease'))
+
+        assertThat(project.tasks.publishApkRelease, dependsOn('assembleRelease'))
+    }
 }

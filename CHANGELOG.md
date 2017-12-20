@@ -1,3 +1,18 @@
+**1.2.0 - 2017-03-23**
+
+* Support for multiple service accounts - #76, #161
+* Support ABI splits - #39
+* Support for uploading proguard mapping files - #132
+* Automatically untrack older versions in other channels during upload - #121
+* Make sure to only read the first line for items that expect a single line string - #143
+* Remove trailing linebreaks - #187
+
+**1.1.5 - 2016-08-09**
+
+* Support Filipino in Metadata - #142
+* Support Screenshots for Wear devices - #127
+* Fixed character count for line breaks on Windows - #136
+
 **1.1.4 - 2015-10-14**
 
 * Do not require signingConfig for bootstrap and listing tasks - #100
