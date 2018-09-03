@@ -1,6 +1,7 @@
-build
 .idea
 *.iml
 .gradle
+build
 local.properties
+out
 userHome
