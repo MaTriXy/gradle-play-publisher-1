@@ -5,17 +5,20 @@ import com.github.triplet.gradle.play.internal.ImageFileFilter
 import com.github.triplet.gradle.play.internal.ImageType
 import com.github.triplet.gradle.play.internal.LISTINGS_PATH
 import com.github.triplet.gradle.play.internal.ListingDetail
-import com.github.triplet.gradle.play.internal.PlayPublishTaskBase
 import com.github.triplet.gradle.play.internal.climbUpTo
+import com.github.triplet.gradle.play.internal.has
 import com.github.triplet.gradle.play.internal.isDirectChildOf
 import com.github.triplet.gradle.play.internal.orNull
 import com.github.triplet.gradle.play.internal.playPath
 import com.github.triplet.gradle.play.internal.readProcessed
+import com.github.triplet.gradle.play.tasks.internal.PlayPublishTaskBase
 import com.google.api.client.googleapis.json.GoogleJsonResponseException
 import com.google.api.client.http.FileContent
 import com.google.api.services.androidpublisher.AndroidPublisher
 import com.google.api.services.androidpublisher.model.AppDetails
 import com.google.api.services.androidpublisher.model.Listing
+import com.google.common.hash.Hashing
+import com.google.common.io.Files
 import org.gradle.api.file.FileCollection
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Internal
@@ -44,10 +47,10 @@ open class PublishListing : PlayPublishTaskBase() {
 
         appDetails + listings
     }
-    @Suppress("MemberVisibilityCanBePrivate") // Needed for Gradle caching to work correctly
+    @Suppress("MemberVisibilityCanBePrivate", "unused") // Used by Gradle
     @get:PathSensitive(PathSensitivity.RELATIVE)
     @get:OutputFile
-    internal val outputFile by lazy {
+    protected val outputFile by lazy {
         File(project.buildDir, "${variant.playPath}/listing-cache-key")
     }
 
@@ -121,7 +124,7 @@ open class PublishListing : PlayPublishTaskBase() {
         try {
             listings().update(variant.applicationId, editId, locale, listing).execute()
         } catch (e: GoogleJsonResponseException) {
-            if (e.details?.errors.orEmpty().any { it.reason == "unsupportedListingLanguage" }) {
+            if (e has "unsupportedListingLanguage") {
                 // Rethrow for clarity
                 throw IllegalArgumentException("Unsupported locale $locale", e)
             } else {
@@ -149,6 +152,15 @@ open class PublishListing : PlayPublishTaskBase() {
         check(files.size <= type.maxNum) {
             "You can only upload ${type.maxNum} graphic(s) for the $typeName"
         }
+
+        val remoteHashes = images().list(variant.applicationId, editId, locale, typeName).execute()
+                .images.orEmpty()
+                .map { it.sha1 }
+        val localHashes = files.map {
+            @Suppress("DEPRECATION") // The API only provides SHA1 hashes
+            Files.asByteSource(it.file).hash(Hashing.sha1()).toString()
+        }
+        if (remoteHashes == localHashes) return
 
         progressLogger.progress("Uploading $locale listing graphics for type '$typeName'")
         images().deleteall(variant.applicationId, editId, locale, typeName).execute()

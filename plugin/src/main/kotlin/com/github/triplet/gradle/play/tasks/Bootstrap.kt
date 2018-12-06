@@ -5,22 +5,32 @@ import com.github.triplet.gradle.play.internal.GRAPHICS_PATH
 import com.github.triplet.gradle.play.internal.ImageType
 import com.github.triplet.gradle.play.internal.LISTINGS_PATH
 import com.github.triplet.gradle.play.internal.ListingDetail
-import com.github.triplet.gradle.play.internal.PlayPublishTaskBase
+import com.github.triplet.gradle.play.internal.PLAY_PATH
+import com.github.triplet.gradle.play.internal.PRODUCTS_PATH
 import com.github.triplet.gradle.play.internal.RELEASE_NOTES_PATH
+import com.github.triplet.gradle.play.internal.flavorNameOrDefault
 import com.github.triplet.gradle.play.internal.nullOrFull
 import com.github.triplet.gradle.play.internal.safeCreateNewFile
+import com.github.triplet.gradle.play.tasks.internal.BootstrapOptions
+import com.github.triplet.gradle.play.tasks.internal.BootstrapOptionsHolder
+import com.github.triplet.gradle.play.tasks.internal.PlayPublishTaskBase
+import com.google.api.client.json.jackson2.JacksonFactory
 import com.google.api.services.androidpublisher.AndroidPublisher
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import java.io.File
+import java.io.FileNotFoundException
 import java.net.URL
 
-open class Bootstrap : PlayPublishTaskBase() {
+open class Bootstrap : PlayPublishTaskBase(), BootstrapOptions by BootstrapOptionsHolder {
+    @Suppress("MemberVisibilityCanBePrivate", "unused") // Used by Gradle
     @get:PathSensitive(PathSensitivity.RELATIVE)
     @get:OutputDirectory
-    internal lateinit var srcDir: File
+    protected val srcDir: File by lazy {
+        project.file("src/${variant.flavorNameOrDefault}/$PLAY_PATH")
+    }
 
     init {
         // Always out-of-date since we don't know what's changed on the network
@@ -31,9 +41,10 @@ open class Bootstrap : PlayPublishTaskBase() {
     fun bootstrap() = read { editId ->
         progressLogger.start("Downloads resources for variant ${variant.name}", null)
 
-        bootstrapAppDetails(editId)
-        bootstrapListing(editId)
-        bootstrapReleaseNotes(editId)
+        if (downloadAppDetails) bootstrapAppDetails(editId)
+        if (downloadListings) bootstrapListings(editId)
+        if (downloadReleaseNotes) bootstrapReleaseNotes(editId)
+        if (downloadProducts) bootstrapProducts()
 
         progressLogger.completed()
     }
@@ -50,7 +61,7 @@ open class Bootstrap : PlayPublishTaskBase() {
         details.defaultLanguage.nullOrFull()?.write(AppDetail.DEFAULT_LANGUAGE)
     }
 
-    private fun AndroidPublisher.Edits.bootstrapListing(editId: String) {
+    private fun AndroidPublisher.Edits.bootstrapListings(editId: String) {
         progressLogger.progress("Fetching listings")
         val listings = listings()
                 .list(variant.applicationId, editId)
@@ -85,8 +96,14 @@ open class Bootstrap : PlayPublishTaskBase() {
                         File(imageDir, "${image.id}.png")
                                 .safeCreateNewFile()
                                 .outputStream()
-                                .use { stream ->
-                                    URL(image.url).openStream().use { it.copyTo(stream) }
+                                .use { local ->
+                                    val remote = try {
+                                        URL(image.url + HIGH_RES_IMAGE_REQUEST).openStream()
+                                    } catch (e: FileNotFoundException) {
+                                        URL(image.url).openStream()
+                                    }
+
+                                    remote.use { it.copyTo(local) }
                                 }
                     }
                 }
@@ -100,7 +117,7 @@ open class Bootstrap : PlayPublishTaskBase() {
     private fun AndroidPublisher.Edits.bootstrapReleaseNotes(editId: String) {
         progressLogger.progress("Downloading release notes")
         tracks().list(variant.applicationId, editId).execute().tracks?.forEach { track ->
-            track.releases.maxBy {
+            track.releases?.maxBy {
                 it.versionCodes?.max() ?: Long.MIN_VALUE
             }?.releaseNotes?.forEach {
                 File(srcDir, "$RELEASE_NOTES_PATH/${it.language}/${track.track}.txt")
@@ -110,6 +127,19 @@ open class Bootstrap : PlayPublishTaskBase() {
         }
     }
 
+    private fun bootstrapProducts() {
+        progressLogger.progress("Downloading in-app products")
+        publisher.inappproducts().list(variant.applicationId).execute().inappproduct?.forEach {
+            JacksonFactory.getDefaultInstance()
+                    .toPrettyString(it)
+                    .write(srcDir, "$PRODUCTS_PATH/${it.sku}.json")
+        }
+    }
+
     private fun String.write(dir: File, fileName: String) =
             File(dir, fileName).safeCreateNewFile().writeText(this)
+
+    private companion object {
+        const val HIGH_RES_IMAGE_REQUEST = "=h16383" // Max res: 2^14 - 1
+    }
 }

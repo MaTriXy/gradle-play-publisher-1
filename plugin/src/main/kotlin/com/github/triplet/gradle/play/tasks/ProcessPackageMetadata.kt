@@ -1,30 +1,31 @@
 package com.github.triplet.gradle.play.tasks
 
 import com.android.build.gradle.api.ApkVariantOutput
-import com.github.triplet.gradle.play.internal.PlayPublishTaskBase
 import com.github.triplet.gradle.play.internal.ResolutionStrategy
+import com.github.triplet.gradle.play.internal.resolutionStrategyOrDefault
+import com.github.triplet.gradle.play.tasks.internal.PlayPublishTaskBase
 import org.gradle.api.tasks.TaskAction
 
 open class ProcessPackageMetadata : PlayPublishTaskBase() {
     init {
         // Always out-of-date since we don't know what's changed on the network
         outputs.upToDateWhen { false }
+
+        onlyIf { extension.resolutionStrategyOrDefault == ResolutionStrategy.AUTO }
     }
 
     @TaskAction
     fun process() {
         progressLogger.start("Updates APK/Bundle metadata for variant ${variant.name}", null)
-
-        if (extension._resolutionStrategy == ResolutionStrategy.AUTO) processVersionCodes()
-
+        processVersionCodes()
         progressLogger.completed()
     }
 
-    private fun processVersionCodes() = read { editId ->
+    private fun processVersionCodes() = read(true) { editId ->
         progressLogger.progress("Downloading active version codes")
         val maxVersionCode = tracks().list(variant.applicationId, editId).execute().tracks
-                ?.map { it.releases ?: emptyList() }?.flatten()
-                ?.map { it.versionCodes ?: emptyList() }?.flatten()
+                ?.flatMap { it.releases.orEmpty() }
+                ?.flatMap { it.versionCodes.orEmpty() }
                 ?.max() ?: 1
 
         val outputs = variant.outputs.filterIsInstance<ApkVariantOutput>()
@@ -33,9 +34,9 @@ open class ProcessPackageMetadata : PlayPublishTaskBase() {
         val patch = maxVersionCode - smallestVersionCode + 1
         if (patch <= 0) return@read // Nothing to do, outputs are already greater than remote
 
-        for (output in outputs) {
-            output.versionCodeOverride = output.versionCode + patch.toInt()
-            extension.outputProcessor?.invoke(output)
+        for ((i, output) in outputs.withIndex()) {
+            output.versionCodeOverride = output.versionCode + patch.toInt() + i
+            extension._outputProcessor?.execute(output)
         }
     }
 }

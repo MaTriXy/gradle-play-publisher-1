@@ -1,6 +1,9 @@
-package com.github.triplet.gradle.play.internal
+package com.github.triplet.gradle.play.tasks.internal
 
 import com.github.triplet.gradle.play.PlayPublisherExtension
+import com.github.triplet.gradle.play.internal.ReleaseStatus
+import com.github.triplet.gradle.play.internal.ResolutionStrategy
+import com.github.triplet.gradle.play.internal.TrackType
 import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.Nested
 import org.gradle.api.tasks.options.Option
@@ -20,9 +23,19 @@ internal interface ExtensionOptions {
             extension.defaultToAppBundles = value
         }
 
-    @get:OptionValues("track")
+    @get:OptionValues("from-track", "track")
     val trackOptions
         get() = TrackType.values().map { it.publishedName }
+    @get:Internal
+    @set:Option(
+            option = "from-track",
+            description = "Set the track from which to promote a release."
+    )
+    var fromTrackOption: String
+        get() = throw UnsupportedOperationException()
+        set(value) {
+            extension.fromTrack = value
+        }
     @get:Internal
     @set:Option(
             option = "track",
@@ -37,7 +50,8 @@ internal interface ExtensionOptions {
     @get:Internal
     @set:Option(
             option = "user-fraction",
-            description = "Set the user percent intended to receive a 'rollout' update. 10% == 0.1"
+            description = "Set the user fraction intended to receive an 'inProgress' release. " +
+                    "Ex: 0.1 == 10%"
     )
     var userFractionOption: String
         get() = throw UnsupportedOperationException()

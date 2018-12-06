@@ -1,9 +1,10 @@
 package com.github.triplet.gradle.play.tasks
 
+import com.android.build.VariantOutput.OutputType
 import com.android.build.gradle.api.ApkVariantOutput
-import com.github.triplet.gradle.play.internal.PlayPublishPackageBase
 import com.github.triplet.gradle.play.internal.playPath
 import com.github.triplet.gradle.play.internal.trackUploadProgress
+import com.github.triplet.gradle.play.tasks.internal.PlayPublishPackageBase
 import com.google.api.client.googleapis.json.GoogleJsonResponseException
 import com.google.api.client.http.FileContent
 import com.google.api.services.androidpublisher.AndroidPublisher
@@ -22,14 +23,16 @@ open class PublishApk : PlayPublishPackageBase() {
     @get:SkipWhenEmpty
     @get:PathSensitive(PathSensitivity.RELATIVE)
     @get:InputFiles
-    internal val inputApks by lazy {
+    protected val inputApks by lazy {
         // TODO: If we take a customizable folder, we can fix #233, #227
-        variant.outputs.filterIsInstance<ApkVariantOutput>().map { it.outputFile }
+        variant.outputs.filterIsInstance<ApkVariantOutput>().filter {
+            OutputType.valueOf(it.outputType) == OutputType.MAIN || it.filters.isNotEmpty()
+        }.map { it.outputFile }
     }
     @Suppress("MemberVisibilityCanBePrivate", "unused") // Used by Gradle
     @get:PathSensitive(PathSensitivity.RELATIVE)
     @get:OutputDirectory
-    internal val outputDir by lazy { File(project.buildDir, "${variant.playPath}/apks") }
+    protected val outputDir by lazy { File(project.buildDir, "${variant.playPath}/apks") }
 
     @TaskAction
     fun publishApks(inputs: IncrementalTaskInputs) = write { editId: String ->
@@ -59,7 +62,7 @@ open class PublishApk : PlayPublishPackageBase() {
                     .trackUploadProgress(progressLogger, "APK")
                     .execute()
         } catch (e: GoogleJsonResponseException) {
-            return e.handleUploadFailures(content.file)
+            return handleUploadFailures(e, content.file)
         }
 
         handlePackageDetails(editId, apk.versionCode)
