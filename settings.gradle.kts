@@ -1,3 +1,9 @@
-include(":plugin")
+plugins {
+    `gradle-enterprise`
+}
 
-enableFeaturePreview("STABLE_PUBLISHING")
+include(
+        ":common:utils", ":common:validation",
+
+        ":play:plugin", ":play:android-publisher"
+)
